@@ -1,6 +1,7 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
 // (c) 2017-2025
 // Pushwig V1A frame-pipeline modification (c) 2026 Peter Kassel
+// Pushwig V1B synthetic-overlay selection (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push.controller;
@@ -40,7 +41,10 @@ public class Push2Display extends AbstractGraphicDisplay
     {
         super (host, configuration, new DefaultGraphicsDimensions (960, 160, maxParameterValue), "Push 2 Display");
 
-        this.framePipeline = PassThroughPushFramePipeline.INSTANCE;
+        final boolean syntheticOverlayEnabled = Boolean.getBoolean ("pushwig.syntheticOverlay");
+        this.framePipeline = syntheticOverlayEnabled ? SyntheticOverlayPushFramePipeline.INSTANCE : PassThroughPushFramePipeline.INSTANCE;
+        if (syntheticOverlayEnabled)
+            host.println ("Pushwig: startup synthetic overlay pipeline enabled.");
         this.usbDisplay = new PushUsbDisplay (host);
     }
 
