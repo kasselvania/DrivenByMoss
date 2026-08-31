@@ -1,5 +1,6 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
 // (c) 2017-2025
+// Pushwig V1A frame-pipeline modification (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push.controller;
@@ -22,8 +23,9 @@ import java.util.concurrent.TimeUnit;
  */
 public class Push2Display extends AbstractGraphicDisplay
 {
-    private final PushUsbDisplay usbDisplay;
-    private boolean              isShutdown = false;
+    private final PushFramePipeline framePipeline;
+    private final PushUsbDisplay    usbDisplay;
+    private boolean                 isShutdown = false;
 
 
     /**
@@ -38,6 +40,7 @@ public class Push2Display extends AbstractGraphicDisplay
     {
         super (host, configuration, new DefaultGraphicsDimensions (960, 160, maxParameterValue), "Push 2 Display");
 
+        this.framePipeline = PassThroughPushFramePipeline.INSTANCE;
         this.usbDisplay = new PushUsbDisplay (host);
     }
 
@@ -88,6 +91,9 @@ public class Push2Display extends AbstractGraphicDisplay
     protected void send (final IBitmap image)
     {
         if (!this.isShutdown && this.usbDisplay != null)
-            this.usbDisplay.send (image);
+        {
+            final IBitmap outputFrame = this.framePipeline.process (image);
+            this.usbDisplay.send (outputFrame);
+        }
     }
 }
