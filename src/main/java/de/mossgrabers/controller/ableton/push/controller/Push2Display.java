@@ -2,6 +2,7 @@
 // (c) 2017-2025
 // Pushwig V1A frame-pipeline modification (c) 2026 Peter Kassel
 // Pushwig V1B synthetic-overlay selection (c) 2026 Peter Kassel
+// Pushwig V1C dynamic-local selection (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push.controller;
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 public class Push2Display extends AbstractGraphicDisplay
 {
     private final PushFramePipeline framePipeline;
+    private final boolean           redrawCurrentModel;
     private final PushUsbDisplay    usbDisplay;
     private boolean                 isShutdown = false;
 
@@ -42,9 +44,20 @@ public class Push2Display extends AbstractGraphicDisplay
         super (host, configuration, new DefaultGraphicsDimensions (960, 160, maxParameterValue), "Push 2 Display");
 
         final boolean syntheticOverlayEnabled = Boolean.getBoolean ("pushwig.syntheticOverlay");
-        this.framePipeline = syntheticOverlayEnabled ? SyntheticOverlayPushFramePipeline.INSTANCE : PassThroughPushFramePipeline.INSTANCE;
-        if (syntheticOverlayEnabled)
+        final boolean dynamicLocalVisualEnabled = Boolean.getBoolean ("pushwig.dynamicLocalVisual");
+        this.redrawCurrentModel = dynamicLocalVisualEnabled;
+        if (dynamicLocalVisualEnabled)
+        {
+            this.framePipeline = new DynamicLocalPushFramePipeline ();
+            host.println ("Pushwig: startup dynamic local visual pipeline enabled.");
+        }
+        else if (syntheticOverlayEnabled)
+        {
+            this.framePipeline = SyntheticOverlayPushFramePipeline.INSTANCE;
             host.println ("Pushwig: startup synthetic overlay pipeline enabled.");
+        }
+        else
+            this.framePipeline = PassThroughPushFramePipeline.INSTANCE;
         this.usbDisplay = new PushUsbDisplay (host);
     }
 
@@ -99,5 +112,13 @@ public class Push2Display extends AbstractGraphicDisplay
             final IBitmap outputFrame = this.framePipeline.process (image);
             this.usbDisplay.send (outputFrame);
         }
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    protected boolean shouldRedrawCurrentModel ()
+    {
+        return this.redrawCurrentModel;
     }
 }
