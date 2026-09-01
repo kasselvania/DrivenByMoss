@@ -3,6 +3,7 @@
 // Pushwig V1A frame-pipeline modification (c) 2026 Peter Kassel
 // Pushwig V1B synthetic-overlay selection (c) 2026 Peter Kassel
 // Pushwig V1C dynamic-local selection (c) 2026 Peter Kassel
+// Pushwig V1D-1 local-raster selection (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push.controller;
@@ -45,8 +46,14 @@ public class Push2Display extends AbstractGraphicDisplay
 
         final boolean syntheticOverlayEnabled = Boolean.getBoolean ("pushwig.syntheticOverlay");
         final boolean dynamicLocalVisualEnabled = Boolean.getBoolean ("pushwig.dynamicLocalVisual");
-        this.redrawCurrentModel = dynamicLocalVisualEnabled;
-        if (dynamicLocalVisualEnabled)
+        final boolean dynamicLocalRasterEnabled = Boolean.getBoolean ("pushwig.dynamicLocalRaster");
+        this.redrawCurrentModel = dynamicLocalVisualEnabled || dynamicLocalRasterEnabled;
+        if (dynamicLocalRasterEnabled)
+        {
+            this.framePipeline = new DynamicLocalRasterPushFramePipeline ();
+            host.println ("Pushwig: startup dynamic local raster pipeline enabled.");
+        }
+        else if (dynamicLocalVisualEnabled)
         {
             this.framePipeline = new DynamicLocalPushFramePipeline ();
             host.println ("Pushwig: startup dynamic local visual pipeline enabled.");
