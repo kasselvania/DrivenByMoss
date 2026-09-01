@@ -1,5 +1,6 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
 // (c) 2017-2025
+// Pushwig V1C semantic-redraw hook (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.framework.controller.display;
@@ -181,12 +182,15 @@ public abstract class AbstractGraphicDisplay implements IGraphicDisplay
 
             final ModelInfo newInfo = new ModelInfo (notification, this.columns, this.overlays);
 
-            // Only render image if there is a change in the data
-            if (!this.info.equals (newInfo))
-            {
-                this.info = newInfo;
+            // Always retain the newest model, including overlay-only changes which are not covered
+            // by ModelInfo equality.
+            final boolean modelChanged = !this.info.equals (newInfo);
+            this.info = newInfo;
+
+            // Ordinary displays retain dirty rendering. Specialized displays can request a fresh
+            // current semantic base before composing their output.
+            if (modelChanged || this.shouldRedrawCurrentModel ())
                 this.renderImage ();
-            }
         }
         finally
         {
@@ -204,6 +208,17 @@ public abstract class AbstractGraphicDisplay implements IGraphicDisplay
      * @param image An image
      */
     protected abstract void send (final IBitmap image);
+
+
+    /**
+     * Returns true when the current retained semantic model must be redrawn before sending.
+     *
+     * @return True to redraw the current model
+     */
+    protected boolean shouldRedrawCurrentModel ()
+    {
+        return false;
+    }
 
 
     /** {@inheritDoc} */
