@@ -4,6 +4,7 @@
 // Pushwig V1B synthetic-overlay selection (c) 2026 Peter Kassel
 // Pushwig V1C dynamic-local selection (c) 2026 Peter Kassel
 // Pushwig V1D-1 local-raster selection (c) 2026 Peter Kassel
+// Pushwig V1D-2 external-ingress selection (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push.controller;
@@ -27,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 public class Push2Display extends AbstractGraphicDisplay
 {
     private final PushFramePipeline framePipeline;
+    private final ExternalRasterPushFramePipeline externalRasterPipeline;
     private final boolean           redrawCurrentModel;
     private final PushUsbDisplay    usbDisplay;
     private boolean                 isShutdown = false;
@@ -44,27 +46,46 @@ public class Push2Display extends AbstractGraphicDisplay
     {
         super (host, configuration, new DefaultGraphicsDimensions (960, 160, maxParameterValue), "Push 2 Display");
 
+        final boolean externalRasterEnabled = Boolean.getBoolean ("pushwig.externalRasterIngress");
         final boolean syntheticOverlayEnabled = Boolean.getBoolean ("pushwig.syntheticOverlay");
         final boolean dynamicLocalVisualEnabled = Boolean.getBoolean ("pushwig.dynamicLocalVisual");
         final boolean dynamicLocalRasterEnabled = Boolean.getBoolean ("pushwig.dynamicLocalRaster");
-        this.redrawCurrentModel = dynamicLocalVisualEnabled || dynamicLocalRasterEnabled;
-        if (dynamicLocalRasterEnabled)
+        PushFramePipeline selectedPipeline;
+        ExternalRasterPushFramePipeline selectedExternalPipeline = null;
+        boolean selectedRedrawCurrentModel = false;
+        if (externalRasterEnabled)
         {
-            this.framePipeline = new DynamicLocalRasterPushFramePipeline ();
+            selectedExternalPipeline = ExternalRasterPushFramePipeline.create (host);
+            if (selectedExternalPipeline == null)
+                selectedPipeline = PassThroughPushFramePipeline.INSTANCE;
+            else
+            {
+                selectedPipeline = selectedExternalPipeline;
+                selectedRedrawCurrentModel = true;
+            }
+        }
+        else if (dynamicLocalRasterEnabled)
+        {
+            selectedPipeline = new DynamicLocalRasterPushFramePipeline ();
+            selectedRedrawCurrentModel = true;
             host.println ("Pushwig: startup dynamic local raster pipeline enabled.");
         }
         else if (dynamicLocalVisualEnabled)
         {
-            this.framePipeline = new DynamicLocalPushFramePipeline ();
+            selectedPipeline = new DynamicLocalPushFramePipeline ();
+            selectedRedrawCurrentModel = true;
             host.println ("Pushwig: startup dynamic local visual pipeline enabled.");
         }
         else if (syntheticOverlayEnabled)
         {
-            this.framePipeline = SyntheticOverlayPushFramePipeline.INSTANCE;
+            selectedPipeline = SyntheticOverlayPushFramePipeline.INSTANCE;
             host.println ("Pushwig: startup synthetic overlay pipeline enabled.");
         }
         else
-            this.framePipeline = PassThroughPushFramePipeline.INSTANCE;
+            selectedPipeline = PassThroughPushFramePipeline.INSTANCE;
+        this.framePipeline = selectedPipeline;
+        this.externalRasterPipeline = selectedExternalPipeline;
+        this.redrawCurrentModel = selectedRedrawCurrentModel;
         this.usbDisplay = new PushUsbDisplay (host);
     }
 
@@ -84,6 +105,9 @@ public class Push2Display extends AbstractGraphicDisplay
     @Override
     public void shutdown ()
     {
+        if (this.externalRasterPipeline != null)
+            this.externalRasterPipeline.beginShutdown ();
+
         this.setMessage (3, "Please start " + this.host.getName () + " to play...");
         this.send ();
 
@@ -92,6 +116,8 @@ public class Push2Display extends AbstractGraphicDisplay
         final ExecutorService executor = Executors.newSingleThreadExecutor ();
         executor.execute ( () -> {
 
+            if (this.externalRasterPipeline != null)
+                this.externalRasterPipeline.awaitShutdown ();
             if (this.usbDisplay != null)
                 this.usbDisplay.shutdown ();
             super.shutdown ();
