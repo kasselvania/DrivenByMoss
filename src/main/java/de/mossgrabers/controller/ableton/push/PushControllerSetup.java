@@ -1065,6 +1065,10 @@ public class PushControllerSetup extends AbstractControllerSetup<PushControlSurf
 
         if (this.pushVersion != PushVersion.VERSION_1)
             surface.updateColorPalette ();
+
+        // GenericControllerExtension schedules startup only after complete setup initialization.
+        if (this.pushVersion != PushVersion.VERSION_1)
+            ((Push2Display) surface.getGraphicsDisplay ()).startExternalIngress ();
     }
 
 

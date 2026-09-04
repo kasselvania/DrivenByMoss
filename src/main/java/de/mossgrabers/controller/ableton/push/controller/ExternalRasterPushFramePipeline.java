@@ -18,12 +18,10 @@ import de.mossgrabers.framework.graphics.RasterPixelFormat;
  */
 final class ExternalRasterPushFramePipeline implements PushFramePipeline
 {
-    private static final int DEFAULT_PORT         = 45291;
-    private static final int MIN_PORT             = 1024;
-    private static final int MAX_PORT             = 65535;
-    private static final int DEFAULT_STALE_MILLIS = 1500;
-    private static final int MIN_STALE_MILLIS     = 100;
-    private static final int MAX_STALE_MILLIS     = 10000;
+    private static final int MIN_PORT         = 1024;
+    private static final int MAX_PORT         = 65535;
+    private static final int MIN_STALE_MILLIS = 100;
+    private static final int MAX_STALE_MILLIS = 10000;
 
     private final LatestExternalRasterFrameStore              store;
     private final LatestExternalRasterFrameStore.DisplayFrame displayFrame = new LatestExternalRasterFrameStore.DisplayFrame ();
@@ -40,19 +38,16 @@ final class ExternalRasterPushFramePipeline implements PushFramePipeline
     }
 
 
-    static ExternalRasterPushFramePipeline create (final IHost host)
+    static ExternalRasterPushFramePipeline create (final IHost host, final int port, final String tokenPath, final int staleMillis, final Runnable terminationCallback)
     {
-        final int port = readBoundedIntegerProperty ("pushwig.externalRasterPort", DEFAULT_PORT, MIN_PORT, MAX_PORT);
-        final int staleMillis = readBoundedIntegerProperty ("pushwig.externalRasterStaleTimeoutMs", DEFAULT_STALE_MILLIS, MIN_STALE_MILLIS, MAX_STALE_MILLIS);
-        final String tokenPath = System.getProperty ("pushwig.externalRasterTokenFile");
-        if (port < 0 || staleMillis < 0 || tokenPath == null || tokenPath.isBlank ())
+        if (port < MIN_PORT || port > MAX_PORT || staleMillis < MIN_STALE_MILLIS || staleMillis > MAX_STALE_MILLIS || tokenPath == null || tokenPath.isBlank () || terminationCallback == null)
         {
             host.error ("Pushwig external raster ingress unavailable: invalid configuration.");
             return null;
         }
 
         final LatestExternalRasterFrameStore store = new LatestExternalRasterFrameStore ((long) staleMillis * 1_000_000L);
-        final ExternalRasterReceiver receiver = ExternalRasterReceiver.start (host, store, port, tokenPath);
+        final ExternalRasterReceiver receiver = ExternalRasterReceiver.start (host, store, port, tokenPath, terminationCallback);
         if (receiver == null)
         {
             store.close ();
@@ -119,22 +114,5 @@ final class ExternalRasterPushFramePipeline implements PushFramePipeline
     long getSuccessfulApplications ()
     {
         return this.successfulApplications;
-    }
-
-
-    private static int readBoundedIntegerProperty (final String name, final int defaultValue, final int minimum, final int maximum)
-    {
-        final String value = System.getProperty (name);
-        if (value == null)
-            return defaultValue;
-        try
-        {
-            final int parsed = Integer.parseInt (value);
-            return parsed >= minimum && parsed <= maximum ? parsed : -1;
-        }
-        catch (final NumberFormatException ex)
-        {
-            return -1;
-        }
     }
 }
