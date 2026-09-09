@@ -58,6 +58,7 @@ final class ExternalRasterReceiver implements Runnable
     private final ServerSocket                   serverSocket;
     private final Thread                         receiverThread;
     private final int                            port;
+    private final Runnable                       terminationCallback;
 
     private volatile Socket                      clientSocket;
     private volatile boolean                     closing;
@@ -74,20 +75,23 @@ final class ExternalRasterReceiver implements Runnable
     private volatile long                        disconnects;
 
 
-    private ExternalRasterReceiver (final IHost host, final LatestExternalRasterFrameStore store, final byte [] token, final ServerSocket serverSocket, final int port)
+    private ExternalRasterReceiver (final IHost host, final LatestExternalRasterFrameStore store, final byte [] token, final ServerSocket serverSocket, final int port, final Runnable terminationCallback)
     {
         this.host = host;
         this.store = store;
         this.token = token;
         this.serverSocket = serverSocket;
         this.port = port;
+        this.terminationCallback = terminationCallback;
         this.receiverThread = new Thread (this, "Pushwig External Raster Receiver");
         this.receiverThread.setDaemon (true);
     }
 
 
-    static ExternalRasterReceiver start (final IHost host, final LatestExternalRasterFrameStore store, final int port, final String tokenPath)
+    static ExternalRasterReceiver start (final IHost host, final LatestExternalRasterFrameStore store, final int port, final String tokenPath, final Runnable terminationCallback)
     {
+        if (terminationCallback == null)
+            return null;
         final byte [] token = loadToken (tokenPath);
         if (token == null)
             return null;
@@ -105,7 +109,7 @@ final class ExternalRasterReceiver implements Runnable
                 1
             }), port), 1);
 
-            final ExternalRasterReceiver receiver = new ExternalRasterReceiver (host, store, token, serverSocket, port);
+            final ExternalRasterReceiver receiver = new ExternalRasterReceiver (host, store, token, serverSocket, port, terminationCallback);
             receiver.receiverThread.start ();
             host.println ("Pushwig: external raster ingress listening on IPv4 loopback port " + port + ".");
             return receiver;
@@ -176,6 +180,14 @@ final class ExternalRasterReceiver implements Runnable
             this.clientSocket = null;
             closeQuietly (this.serverSocket);
             Arrays.fill (this.token, (byte) 0);
+            try
+            {
+                this.terminationCallback.run ();
+            }
+            catch (final RuntimeException ex)
+            {
+                this.host.error ("Pushwig external raster receiver termination cleanup failed.", ex);
+            }
         }
     }
 

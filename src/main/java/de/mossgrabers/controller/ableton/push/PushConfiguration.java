@@ -1,5 +1,6 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
 // (c) 2017-2025
+// Pushwig V5A ordinary external-ingress activation (c) 2026 Peter Kassel
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ableton.push;
@@ -157,6 +158,7 @@ public class PushConfiguration extends AbstractConfiguration implements IGraphic
     private static final String     CATEGORY_RIBBON                            = "Ribbon";
     private static final String     CATEGORY_AUDIO                             = "Audio Interface";
     private static final String     CATEGORY_COLORS                            = "Display Colors";
+    private static final String     CATEGORY_PUSHWIG                           = "Pushwig";
 
     private static final String []  RIBBON_MODE_VALUES                         =
     {
@@ -385,6 +387,7 @@ public class PushConfiguration extends AbstractConfiguration implements IGraphic
     private int                   ribbonModeNoteRepeat         = NOTE_REPEAT_PERIOD;
 
     private boolean               stopAutomationOnKnobRelease  = false;
+    private boolean               pushwigExternalRasterIngressEnabled;
     private Modes                 debugMode                    = Modes.TRACK;
     private Modes                 layerMode                    = null;
 
@@ -597,6 +600,11 @@ public class PushConfiguration extends AbstractConfiguration implements IGraphic
 
         this.activatePush2HardwareSettings (globalSettings);
         this.activatePush2DisplayColorsSettings (globalSettings);
+
+        ///////////////////////////
+        // Pushwig
+
+        this.activatePushwigSettings (globalSettings);
 
         ///////////////////////////
         // Debugging
@@ -1351,6 +1359,17 @@ public class PushConfiguration extends AbstractConfiguration implements IGraphic
     public boolean isAntialiasEnabled ()
     {
         return true;
+    }
+
+
+    /**
+     * Is the ordinary-launch Pushwig external raster ingress enabled?
+     *
+     * @return True if enabled for the next controller construction
+     */
+    public boolean isPushwigExternalRasterIngressEnabled ()
+    {
+        return this.pushwigExternalRasterIngressEnabled;
     }
 
 
@@ -2169,5 +2188,15 @@ public class PushConfiguration extends AbstractConfiguration implements IGraphic
             return;
 
         settingsUI.getSignalSetting (" ", CATEGORY_DEBUG, "Display window").addSignalObserver (value -> this.notifyObservers (DEBUG_WINDOW));
+    }
+
+
+    void activatePushwigSettings (final ISettingsUI settingsUI)
+    {
+        if (this.pushVersion == PushVersion.VERSION_1)
+            return;
+
+        final IEnumSetting ingressSetting = settingsUI.getEnumSetting ("External visual ingress (requires restart)", CATEGORY_PUSHWIG, ON_OFF_OPTIONS, ON_OFF_OPTIONS[0]);
+        this.pushwigExternalRasterIngressEnabled = ON_OFF_OPTIONS[1].equals (ingressSetting.get ());
     }
 }
