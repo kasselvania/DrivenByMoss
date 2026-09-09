@@ -36,9 +36,36 @@ public class Push3ControllerExtensionDefinition extends AbstractControllerExtens
 
     /** {@inheritDoc} */
     @Override
-    protected IControllerSetup<PushControlSurface, PushConfiguration> getControllerSetup (final ControllerHost host)
+    protected IControllerSetup<PushControlSurface, PushConfiguration> getControllerSetup (final ControllerHost controllerHost)
     {
-        return new PushControllerSetup (new HostImpl (host), new BitwigSetupFactory (host), new SettingsUIImpl (host, host.getPreferences ()), new SettingsUIImpl (host, host.getDocumentState ()), PushVersion.VERSION_3);
+        // Diagnostic artifact only: observe the real Push setup, never a second controller.
+        return new PushControllerSetup (new HostImpl (controllerHost), new BitwigSetupFactory (controllerHost), new SettingsUIImpl (controllerHost, controllerHost.getPreferences ()), new SettingsUIImpl (controllerHost, controllerHost.getDocumentState ()), PushVersion.VERSION_3)
+        {
+            private PushBindingTrace trace;
+
+            @Override
+            public void init ()
+            {
+                super.init ();
+                this.trace = PushBindingTrace.attach (controllerHost, this);
+            }
+
+            @Override
+            public void flush ()
+            {
+                super.flush ();
+                if (this.trace != null)
+                    this.trace.flush ();
+            }
+
+            @Override
+            public void exit ()
+            {
+                if (this.trace != null)
+                    this.trace.close ();
+                super.exit ();
+            }
+        };
     }
 
 
