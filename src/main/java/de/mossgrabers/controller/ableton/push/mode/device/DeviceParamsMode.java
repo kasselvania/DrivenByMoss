@@ -4,6 +4,7 @@
 
 package de.mossgrabers.controller.ableton.push.mode.device;
 
+import de.mossgrabers.controller.ableton.push.PushVersion;
 import de.mossgrabers.controller.ableton.push.controller.Push1Display;
 import de.mossgrabers.controller.ableton.push.controller.PushColorManager;
 import de.mossgrabers.controller.ableton.push.controller.PushControlSurface;
@@ -39,6 +40,21 @@ import java.util.Optional;
  */
 public class DeviceParamsMode extends BaseMode<IParameter>
 {
+    // Bitwig's hardware group indices identify remote slots, not permanent parameter identities.
+    // Reuse the existing Push palette: red, orange, yellow, lime, green, blue, purple, pink.
+    // These are physical upper-row LED colors, not screen text or a queried Bitwig color setting.
+    private static final int [] REMOTE_SLOT_COLORS =
+    {
+        PushColorManager.PUSH2_COLOR2_RED_HI,
+        PushColorManager.PUSH2_COLOR2_AMBER_HI,
+        PushColorManager.PUSH2_COLOR2_YELLOW_HI,
+        PushColorManager.PUSH2_COLOR2_LIME_HI,
+        PushColorManager.PUSH2_COLOR2_SPRING_HI,
+        PushColorManager.PUSH2_COLOR2_SKY_HI,
+        PushColorManager.PUSH2_COLOR2_BLUE_ORCHID,
+        PushColorManager.PUSH2_COLOR2_MAGENTA_PINK
+    };
+
     private static final String [] MENU     =
     {
         "On",
@@ -275,6 +291,12 @@ public class DeviceParamsMode extends BaseMode<IParameter>
         index = this.isButtonRow (1, buttonID);
         if (index >= 0)
         {
+            if (this.surface.getConfiguration ().getPushVersion () == PushVersion.VERSION_3 && this.surface.getModeManager ().getActiveID () == Modes.DEVICE_PARAMS)
+            {
+                // Button actions remain unchanged. Other modes own their existing LED feedback.
+                return cd.doesExist () && cd.getParameterBank ().getItem (index).doesExist () ? REMOTE_SLOT_COLORS[index] : PushColorManager.PUSH2_COLOR2_BLACK;
+            }
+
             final int white = this.isPushModern ? PushColorManager.PUSH2_COLOR2_WHITE : PushColorManager.PUSH1_COLOR2_WHITE;
             if (!cd.doesExist ())
                 return index == 7 ? white : super.getButtonColor (buttonID);
