@@ -24,6 +24,7 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.UUID;
 
 
 /**
@@ -73,6 +74,7 @@ final class ExternalRasterReceiver implements Runnable
     private volatile long                        truncatedHeaders;
     private volatile long                        truncatedPayloads;
     private volatile long                        disconnects;
+    private volatile UUID                        lastDisconnectedSession;
 
 
     private ExternalRasterReceiver (final IHost host, final LatestExternalRasterFrameStore store, final byte [] token, final ServerSocket serverSocket, final int port, final Runnable terminationCallback)
@@ -239,6 +241,7 @@ final class ExternalRasterReceiver implements Runnable
         final InputStream input = socket.getInputStream ();
         long generation = 0;
         boolean authenticated = false;
+        UUID authenticatedSession = null;
         try
         {
             final int helloHeaderBytes = readExact (input, this.header, HEADER_LENGTH);
@@ -272,9 +275,12 @@ final class ExternalRasterReceiver implements Runnable
             }
 
             generation = this.nextGeneration ();
-            this.store.beginSession (generation);
+            // Retain the already authenticated v1 session identity with each publication. The
+            // controller may bind image acceptance to a context without changing the wire format.
+            this.store.beginSession (generation, sessionHigh, sessionLow);
             this.acceptedSessions++;
             authenticated = true;
+            authenticatedSession = new UUID (sessionHigh, sessionLow);
             long lastSequence = 0;
             boolean sequenceExhausted = false;
 
@@ -358,9 +364,16 @@ final class ExternalRasterReceiver implements Runnable
             if (authenticated)
             {
                 this.store.invalidateSession (generation);
+                this.lastDisconnectedSession = authenticatedSession;
                 this.disconnects++;
             }
         }
+    }
+
+
+    UUID getLastDisconnectedSession ()
+    {
+        return this.lastDisconnectedSession;
     }
 
 

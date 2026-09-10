@@ -454,6 +454,13 @@ public abstract class AbstractGraphicDisplay implements IGraphicDisplay
     }
 
 
+    /** Whether the current semantic render owns a notification or overlay above its content. */
+    protected final boolean hasSemanticOverlay ()
+    {
+        return this.info.getNotification () != null || !this.info.getOverlays ().isEmpty ();
+    }
+
+
     private void renderImage ()
     {
         this.image.render (this.configuration.isAntialiasEnabled (), gc -> {

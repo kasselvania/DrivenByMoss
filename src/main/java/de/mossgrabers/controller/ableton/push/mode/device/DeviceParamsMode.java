@@ -6,10 +6,13 @@ package de.mossgrabers.controller.ableton.push.mode.device;
 
 import de.mossgrabers.controller.ableton.push.PushVersion;
 import de.mossgrabers.controller.ableton.push.controller.Push1Display;
+import de.mossgrabers.controller.ableton.push.controller.Push2Display;
 import de.mossgrabers.controller.ableton.push.controller.PushColorManager;
 import de.mossgrabers.controller.ableton.push.controller.PushControlSurface;
+import de.mossgrabers.controller.ableton.push.controller.SamplerLensPresentation;
 import de.mossgrabers.controller.ableton.push.mode.BaseMode;
 import de.mossgrabers.framework.controller.ButtonID;
+import de.mossgrabers.framework.controller.ContinuousID;
 import de.mossgrabers.framework.controller.color.ColorEx;
 import de.mossgrabers.framework.controller.display.IGraphicDisplay;
 import de.mossgrabers.framework.controller.display.ITextDisplay;
@@ -31,6 +34,8 @@ import de.mossgrabers.framework.utils.ButtonEvent;
 import de.mossgrabers.framework.utils.StringUtils;
 
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
 
 
 /**
@@ -444,6 +449,8 @@ public class DeviceParamsMode extends BaseMode<IParameter>
     @Override
     public void updateDisplay2 (final IGraphicDisplay display)
     {
+        if (display instanceof final Push2Display pushDisplay && pushDisplay.isSamplerPresentationRequested ())
+            pushDisplay.prepareSamplerPresentation (this.createSamplerLensPresentation ());
         final ICursorDevice cd = this.model.getCursorDevice ();
         if (!this.checkExists2 (display, cd))
             return;
@@ -492,6 +499,46 @@ public class DeviceParamsMode extends BaseMode<IParameter>
 
             display.addParameterElement (this.hostMenu[i], isTopMenuOn, bottomMenu, bottomMenuIcon, color, isBottomMenuOn, parameterName, parameterValue, parameterValueStr, parameterIsActive, parameterModulatedValue);
         }
+    }
+
+
+    /**
+     * Read the approved compact layout from this mode's actual semantic owners. This method is
+     * not native-device authority and must not enable image composition by itself. Button actions,
+     * parameter bindings and the ordinary updateDisplay2 path remain unchanged.
+     *
+     * @return Current readouts, or null outside the qualified physical mode/hardware
+     */
+    public SamplerLensPresentation createSamplerLensPresentation ()
+    {
+        final ICursorDevice cd = this.model.getCursorDevice ();
+        if (this.surface.getConfiguration ().getPushVersion () != PushVersion.VERSION_3 ||
+            this.surface.getModeManager ().getActiveID () != Modes.DEVICE_PARAMS || !cd.doesExist ())
+            return null;
+
+        final IParameterBank parameters = cd.getParameterBank ();
+        if (parameters.getPageSize () != 8)
+            return null;
+        final IParameterPageBank pages = parameters.getPageBank ();
+        final IDeviceBank devices = cd.getDeviceBank ();
+        final ColorEx navigationColor = DAWColor.getColorEntry (this.model.getCurrentTrackBank ().getSelectedChannelColorEntry ());
+        final boolean hasPinning = this.model.getHost ().supports (Capability.HAS_PINNING);
+        final List<SamplerLensPresentation.Slot> slots = new ArrayList<> (8);
+        for (int i = 0; i < 8; i++)
+        {
+            final IDevice device = devices.getItem (i);
+            final IParameter parameter = parameters.getItem (i);
+            final boolean exists = parameter.doesExist ();
+            final String navigation = this.showDevices ? (device.doesExist () ? device.getName (12) : "") : StringUtils.limit (pages.getItem (i), 12);
+            final boolean selected = i == (this.showDevices ? cd.getIndex () : pages.getSelectedItemIndex ());
+            final ColorEx color = this.showDevices && !device.isEnabled () ? this.surface.getConfiguration ().getColorBackground () : navigationColor;
+            final var knob = this.surface.getContinuous (ContinuousID.get (ContinuousID.KNOB1, i));
+            // The mode-local touch bit can survive release in another mode. Read the actual knob.
+            final boolean touched = knob != null && knob.isTouched ();
+            slots.add (new SamplerLensPresentation.Slot (this.hostMenu[i], this.getTopMenuEnablement (cd, hasPinning, i),
+                navigation, selected, color, exists ? parameter.getName (64) : "", exists ? parameter.getDisplayedValue (64) : "", exists, touched));
+        }
+        return new SamplerLensPresentation (slots);
     }
 
 

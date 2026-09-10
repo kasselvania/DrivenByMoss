@@ -56,6 +56,7 @@ public final class DeviceRemoteLedColorTest
         f.manager.setActive (Modes.TRACK);
         final int [] trackColors = f.colors ();
         f.manager.setActive (Modes.DEVICE_PARAMS);
+        testLivePresentationData (f);
         check (Arrays.equals (f.colors (), EXPECTED), "Upper physical row must identify all eight remote slots");
         for (int i = 0; i < 8; i++)
         {
@@ -135,9 +136,52 @@ public final class DeviceRemoteLedColorTest
             throw new AssertionError (message);
     }
 
+
+    private static void testLivePresentationData (final Fixture f)
+    {
+        final int before = f.bindings;
+        var presentation = f.device.createSamplerLensPresentation ();
+        check (presentation != null, "Device Parameters can supply current compact readouts");
+        for (int i = 0; i < 8; i++)
+        {
+            check (presentation.getSlots ().get (i).alias ().equals ("Remote " + i), "Alias comes from current parameter bank");
+            check (presentation.getSlots ().get (i).value ().equals ("0.00 unit"), "Formatted value comes from the parameter, not screenshot/OCR");
+        }
+        f.values[0] = "113.25 %";
+        f.touched[0] = true;
+        f.touched[7] = true;
+        presentation = f.device.createSamplerLensPresentation ();
+        check (presentation.getSlots ().get (0).value ().equals ("113.25 %"), "Value changes without screen recognition or touch gating");
+        check (presentation.getSlots ().get (0).touched () && presentation.getSlots ().get (7).touched (), "Concurrent raw touches are retained");
+        check (presentation.getSlots ().get (0).action ().equals ("On") && presentation.getSlots ().get (0).actionActive (), "Independent button action/state survives");
+        f.manager.setTemporary (Modes.MASTER_TEMP);
+        check (f.device.createSamplerLensPresentation () == null, "Temporary Master cannot use Device presentation");
+        f.touched[0] = false;
+        f.touched[7] = false;
+        f.manager.restore ();
+        check (!f.device.createSamplerLensPresentation ().getSlots ().get (0).touched (), "Release outside Device mode does not retain a touch highlight");
+        f.exists[2] = false;
+        presentation = f.device.createSamplerLensPresentation ();
+        check (!presentation.getSlots ().get (2).exists () && presentation.getSlots ().get (2).alias ().isEmpty () && presentation.getSlots ().get (2).value ().isEmpty (), "Unassigned slot does not retain old text");
+        f.exists[2] = true;
+        f.device.setShowDevices (false);
+        presentation = f.device.createSamplerLensPresentation ();
+        check (presentation.getSlots ().get (2).navigation ().equals ("Page 2") && presentation.getSlots ().get (2).navigationActive (), "Actual page navigation state is retained");
+        check (presentation.getSlots ().get (4).actionActive (), "Banks action state follows existing menu owner");
+        f.device.setShowDevices (true);
+        final int afterModeRestore = f.bindings;
+        for (int i = 0; i < 100; i++) f.device.createSamplerLensPresentation ();
+        check (f.bindings == afterModeRestore && afterModeRestore > before, "Only real mode switching rebinds; presentation reads do not");
+        f.deviceExists = false;
+        check (f.device.createSamplerLensPresentation () == null, "Missing device refuses compact presentation");
+        f.deviceExists = true;
+    }
+
     private static final class Fixture
     {
         private final boolean [] exists = { true, true, true, true, true, true, true, true };
+        private final boolean [] touched = new boolean [8];
+        private final String [] values = { "0.00 unit", "0.00 unit", "0.00 unit", "0.00 unit", "0.00 unit", "0.00 unit", "0.00 unit", "0.00 unit" };
         private boolean deviceExists = true;
         private final IParameter [] remotes = new IParameter [8];
         private final IParameter [] bound = new IParameter [8];
@@ -161,6 +205,8 @@ public final class DeviceRemoteLedColorTest
                 {
                     final int index = ((ContinuousID) a[1]).ordinal () - ContinuousID.KNOB1.ordinal ();
                     return proxy (IHwRelativeKnob.class, (knob, method, args) -> {
+                        if (method.getName ().equals ("isTouched"))
+                            return this.touched[index];
                         if (method.getName ().equals ("bind") && args[0] instanceof IParameter parameter)
                         {
                             this.bound[index] = parameter;
@@ -222,6 +268,7 @@ public final class DeviceRemoteLedColorTest
             final ITrackBank tracks = proxy (ITrackBank.class, (p, m, a) -> switch (m.getName ()) {
                 case "getPageSize" -> 8;
                 case "getItem" -> track;
+                case "getSelectedChannelColorEntry" -> "DAW_COLOR_ORANGE";
                 default -> fallback (m.getReturnType ());
             });
             final IMasterTrack master = proxy (IMasterTrack.class, (p, m, a) -> m.getName ().endsWith ("Parameter") ? this.remotes[0] : fallback (m.getReturnType ()));
@@ -251,6 +298,7 @@ public final class DeviceRemoteLedColorTest
             return proxy (IParameter.class, (p, m, a) -> switch (m.getName ()) {
                 case "doesExist" -> this.exists[index];
                 case "getName" -> name;
+                case "getDisplayedValue" -> this.values[index];
                 default -> fallback (m.getReturnType ());
             });
         }

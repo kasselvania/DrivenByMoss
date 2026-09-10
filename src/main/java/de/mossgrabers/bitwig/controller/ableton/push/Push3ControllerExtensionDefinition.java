@@ -7,6 +7,7 @@ package de.mossgrabers.bitwig.controller.ableton.push;
 import de.mossgrabers.bitwig.framework.BitwigSetupFactory;
 import de.mossgrabers.bitwig.framework.configuration.SettingsUIImpl;
 import de.mossgrabers.bitwig.framework.daw.HostImpl;
+import de.mossgrabers.bitwig.framework.daw.data.CursorDeviceImpl;
 import de.mossgrabers.bitwig.framework.extension.AbstractControllerExtensionDefinition;
 import de.mossgrabers.controller.ableton.push.Push3ControllerDefinition;
 import de.mossgrabers.controller.ableton.push.PushConfiguration;
@@ -38,7 +39,47 @@ public class Push3ControllerExtensionDefinition extends AbstractControllerExtens
     @Override
     protected IControllerSetup<PushControlSurface, PushConfiguration> getControllerSetup (final ControllerHost host)
     {
-        return new PushControllerSetup (new HostImpl (host), new BitwigSetupFactory (host), new SettingsUIImpl (host, host.getPreferences ()), new SettingsUIImpl (host, host.getDocumentState ()), PushVersion.VERSION_3);
+        final ControllerHost nativeHost = host;
+        return new PushControllerSetup (new HostImpl (host), new BitwigSetupFactory (host), new SettingsUIImpl (host, host.getPreferences ()), new SettingsUIImpl (host, host.getDocumentState ()), PushVersion.VERSION_3)
+        {
+            private NativeSamplerLens samplerLens;
+
+            @Override
+            public void init ()
+            {
+                super.init ();
+                if (this.getSurface ().getConfiguration ().isPushwigExternalRasterIngressEnabled ())
+                {
+                    try
+                    {
+                        this.samplerLens = new NativeSamplerLens (nativeHost, ((CursorDeviceImpl) this.getModel ().getCursorDevice ()).getCursorDevice (),
+                            this.getModel ().getCursorDevice ().getParameterBank (), this.getSurface ());
+                    }
+                    catch (final RuntimeException ex)
+                    {
+                        // Native observation failure must not abort ordinary Push controls. The
+                        // display was made semantic-only before this observer requested API objects.
+                        this.host.error ("Pushwig Sampler identity unavailable; retaining semantics.", ex);
+                    }
+                }
+            }
+
+            @Override
+            public void flush ()
+            {
+                if (this.samplerLens != null)
+                    this.samplerLens.update ();
+                super.flush ();
+            }
+
+            @Override
+            public void exit ()
+            {
+                if (this.samplerLens != null)
+                    this.samplerLens.close ();
+                super.exit ();
+            }
+        };
     }
 
 

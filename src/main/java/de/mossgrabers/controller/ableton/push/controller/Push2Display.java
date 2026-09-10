@@ -19,6 +19,7 @@ import de.mossgrabers.framework.graphics.IBitmap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 
 /**
@@ -34,10 +35,14 @@ public class Push2Display extends AbstractGraphicDisplay
     private PushwigExternalIngressActivation        externalIngressActivation;
     private final boolean                          externalIngressRequested;
     private boolean                                externalIngressStartupAttempted;
-    private boolean                                shutdownRequested;
+    private volatile boolean                       shutdownRequested;
     private final boolean                          redrawCurrentModel;
     private final PushUsbDisplay                   usbDisplay;
     private boolean                                isShutdown = false;
+    private boolean                                samplerLensManaged;
+    private UUID                                   samplerSession;
+    private SamplerLensPresentation                samplerPresentation;
+    private SamplerLensContextPublisher            samplerPublisher;
 
 
     /**
@@ -106,7 +111,68 @@ public class Push2Display extends AbstractGraphicDisplay
             synchronized (this.frameLock)
             {
                 this.framePipeline = this.externalIngressActivation.getPipeline ();
+                if (this.samplerLensManaged)
+                    this.samplerPublisher = new SamplerLensContextPublisher (this.host, this.externalIngressActivation.getRendezvous (), this.samplerSession);
             }
+        }
+    }
+
+
+    /** Internal setup hook: establish local composition ownership without starting any ingress. */
+    public void manageSamplerLens ()
+    {
+        synchronized (this.frameLock)
+        {
+            this.samplerLensManaged = true;
+        }
+    }
+
+
+    /** Native context owner acquires one session; repeated reads do not change its identity. */
+    public void acquireSamplerContext ()
+    {
+        synchronized (this.frameLock)
+        {
+            if (!this.samplerLensManaged || this.shutdownRequested || this.isShutdown)
+                return;
+            final UUID disconnected = this.framePipeline instanceof final ExternalRasterPushFramePipeline external ? external.getReceiver ().getLastDisconnectedSession () : null;
+            if (this.samplerSession != null && !this.samplerSession.equals (disconnected))
+                return;
+            this.samplerSession = UUID.randomUUID ();
+            if (this.samplerPublisher != null)
+                this.samplerPublisher.offer (this.samplerSession);
+        }
+    }
+
+
+    /** Revoke locally before the producer can observe a mode/device change. No I/O here. */
+    public void revokeSamplerContext ()
+    {
+        synchronized (this.frameLock)
+        {
+            this.samplerSession = null;
+            this.samplerPresentation = null;
+            if (this.samplerPublisher != null)
+                this.samplerPublisher.offer (null);
+        }
+    }
+
+
+    /** A fresh mode render must supply readouts for each send; retained old-mode data is not used. */
+    public void prepareSamplerPresentation (final SamplerLensPresentation presentation)
+    {
+        synchronized (this.frameLock)
+        {
+            this.samplerPresentation = this.samplerSession == null ? null : presentation;
+        }
+    }
+
+
+    public boolean isSamplerPresentationRequested ()
+    {
+        synchronized (this.frameLock)
+        {
+            return this.samplerLensManaged && this.samplerSession != null && !this.isShutdown;
         }
     }
 
@@ -132,6 +198,7 @@ public class Push2Display extends AbstractGraphicDisplay
             if (this.shutdownRequested)
                 return;
             this.shutdownRequested = true;
+            this.revokeSamplerContext ();
             activation = this.externalIngressActivation;
             if (activation != null)
                 activation.beginShutdown ();
@@ -150,6 +217,8 @@ public class Push2Display extends AbstractGraphicDisplay
 
             if (activation != null)
                 activation.awaitShutdown ();
+            if (this.samplerPublisher != null)
+                this.samplerPublisher.close ();
             if (this.usbDisplay != null)
                 this.usbDisplay.shutdown ();
             super.shutdown ();
@@ -176,7 +245,16 @@ public class Push2Display extends AbstractGraphicDisplay
         {
             if (!this.isShutdown && this.usbDisplay != null)
             {
-                final IBitmap outputFrame = this.framePipeline.process (image);
+                final IBitmap outputFrame;
+                if (this.samplerLensManaged && this.framePipeline instanceof final ExternalRasterPushFramePipeline external)
+                {
+                    final boolean permitted = this.samplerSession != null && this.samplerPublisher != null && this.samplerPublisher.isAvailable () && !this.hasSemanticOverlay ();
+                    outputFrame = external.processSampler (image, permitted ? this.samplerSession.getMostSignificantBits () : 0,
+                        permitted ? this.samplerSession.getLeastSignificantBits () : 0, permitted ? this.samplerPresentation : null);
+                }
+                else
+                    outputFrame = this.framePipeline.process (image);
+                this.samplerPresentation = null;
                 this.usbDisplay.send (outputFrame);
             }
         }

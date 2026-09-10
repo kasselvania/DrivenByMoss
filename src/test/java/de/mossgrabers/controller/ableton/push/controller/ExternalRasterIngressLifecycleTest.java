@@ -59,6 +59,7 @@ public final class ExternalRasterIngressLifecycleTest
             testBindFailureCleanup (hostLog.host ());
             testFrameClearDisconnectAndRestart (hostLog);
             testDisplayStartupBoundary (hostLog);
+            testSamplerContextLifecycle (hostLog);
             require (hostLog.messages.stream ().noneMatch (message -> message.matches (".*[0-9a-f]{64}.*")), "A capability value appeared in host output.");
             System.out.println ("ExternalRasterIngressLifecycleTest: PASS");
         }
@@ -268,6 +269,103 @@ public final class ExternalRasterIngressLifecycleTest
             else
                 System.setProperty ("pushwig.syntheticOverlay", previousDiagnostic);
         }
+    }
+
+
+    private static void testSamplerContextLifecycle (final HostLog hostLog) throws Exception
+    {
+        final Path notices = runtimeRoot ().resolveSibling ("sampler-lens-v1");
+        Path current = null;
+        final BitmapProbe bitmap = new BitmapProbe ();
+        final Push2Display display = createDisplay (hostLog, bitmap);
+        final List<SamplerLensPresentation.Slot> slots = new ArrayList<> ();
+        for (int i = 0; i < 8; i++)
+            slots.add (new SamplerLensPresentation.Slot ("Action", true, "Device", true,
+                de.mossgrabers.framework.controller.color.ColorEx.ORANGE, "Remote", "100 %", true, false));
+        final SamplerLensPresentation screen = new SamplerLensPresentation (slots);
+        try
+        {
+            display.manageSamplerLens ();
+            display.acquireSamplerContext ();
+            require (!Files.exists (notices), "Construction/acquisition before startup published context authority.");
+            display.startExternalIngress ();
+            current = notices.resolve (discover ().generation () + ".json");
+            final Path notice = current;
+            waitFor (() -> Files.exists (notice), "Context notice was not published.");
+            final JsonNode first = MAPPER.readTree (Files.readString (current));
+            require (first.get ("context_session").asText ().matches ("[0-9a-f]{32}"), "Missing context session.");
+            require (first.get ("ingress_generation").asText ().equals (discover ().generation ()), "Context is not associated with the current ingress lifecycle.");
+            require (Files.getPosixFilePermissions (current).equals (java.nio.file.attribute.PosixFilePermissions.fromString ("rw-------")), "Context notice is not private.");
+            try (final var files = Files.list (runtimeRoot ()))
+            {
+                require (files.noneMatch (p -> p.getFileName ().toString ().contains ("sampler")), "Sampler added an unknown file inside the protected V5A directory.");
+            }
+            final String firstSession = first.get ("context_session").asText ();
+            display.acquireSamplerContext ();
+            require (firstSession.equals (MAPPER.readTree (Files.readString (current)).get ("context_session").asText ()), "Repeated acquisition changed current identity.");
+
+            final long high = Long.parseUnsignedLong (firstSession.substring (0, 16), 16);
+            final long low = Long.parseUnsignedLong (firstSession.substring (16), 16);
+            final Discovery discovery = discover ();
+            final ExternalRasterPushFramePipeline external = (ExternalRasterPushFramePipeline) pipelineOf (display);
+            try (Socket socket = connect ())
+            {
+                authenticate (socket, discovery.capability (), high, low);
+                final byte [] center = new byte [484 * 114 * 4];
+                for (int i = 3; i < center.length; i += 4) center[i] = (byte) 255;
+                sendFrame (socket, high, low, 1, 238, 25, 484, 114, 484 * 4, center);
+                waitFor (() -> external.getReceiver ().getAcceptedFrames () == 1, "Sampler frame not received.");
+                display.prepareSamplerPresentation (screen);
+                display.send ();
+                require (bitmap.writes == 1, "Real display did not apply eligible image after current semantic redraw.");
+                display.send ();
+                require (bitmap.writes == 1, "A send without a fresh Device-mode presentation reused old contextual state.");
+
+                sendFrame (socket, high, low, 2, 238, 25, 484, 114, 484 * 4, center);
+                waitFor (() -> external.getReceiver ().getAcceptedFrames () == 2, "Second Sampler frame not received.");
+                display.prepareSamplerPresentation (screen);
+                display.setNotificationMessage ("Current semantic notification");
+                display.send ();
+                require (bitmap.writes == 1, "Sampler image covered a current semantic notification.");
+                display.setNotificationMessage (null);
+            }
+            finally { Arrays.fill (discovery.capability (), (byte) 0); }
+
+            waitFor (() -> external.getReceiver ().getDisconnects () > 0, "Producer disconnect was not observed.");
+            display.acquireSamplerContext ();
+            waitFor (() -> !firstSession.equals (MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ()), "Reconnect would reuse a session across connections.");
+            final String reconnectSession = MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ();
+            final Discovery reconnect = discover ();
+            String newerSession;
+            try (Socket socket = connect ())
+            {
+                authenticate (socket, reconnect.capability (), Long.parseUnsignedLong (reconnectSession.substring (0, 16), 16), Long.parseUnsignedLong (reconnectSession.substring (16), 16));
+                waitFor (() -> external.getReceiver ().getAcceptedSessions () == 2, "Reconnect HELLO was not accepted.");
+                display.revokeSamplerContext ();
+                display.acquireSamplerContext ();
+                waitFor (() -> !reconnectSession.equals (MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ()), "New context not published while old connection remained open.");
+                newerSession = MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ();
+            }
+            finally { Arrays.fill (reconnect.capability (), (byte) 0); }
+            waitFor (() -> external.getReceiver ().getDisconnects () == 2, "Old connection did not end.");
+            display.acquireSamplerContext ();
+            require (newerSession.equals (MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ()), "Closing an old context churned the newer context identity.");
+            display.revokeSamplerContext ();
+            require (!display.isSamplerPresentationRequested (), "Local context loss waited for filesystem publication.");
+            waitFor (() -> MAPPER.readTree (Files.readString (notice)).get ("context_session").isNull (), "Inactive context notice did not follow local revocation.");
+            display.acquireSamplerContext ();
+            waitFor (() -> !MAPPER.readTree (Files.readString (notice)).get ("context_session").isNull (), "New context did not publish.");
+            require (!firstSession.equals (MAPPER.readTree (Files.readString (current)).get ("context_session").asText ()), "Re-entry reused the previous context session.");
+        }
+        finally { display.shutdown (); }
+        display.acquireSamplerContext ();
+        require (!display.isSamplerPresentationRequested (), "Shutdown allowed context reacquisition.");
+        try (final var files = Files.list (notices))
+        {
+            require (files.findAny ().isEmpty (), "Context notices remain after shutdown.");
+        }
+        requireNoAuthority ();
+        System.out.println ("Sampler display lifecycle: pre-startup / private notice / context change / fresh presentation / notification / shutdown PASS");
     }
 
 

@@ -26,6 +26,8 @@ final class LatestExternalRasterFrameStore
     private volatile boolean    closed;
 
     private long                activeGeneration;
+    private long                activeSessionHigh;
+    private long                activeSessionLow;
     private long                publicationVersion;
     private boolean             publishedValid;
     private int                 publishedLength;
@@ -36,6 +38,8 @@ final class LatestExternalRasterFrameStore
     private int                 publishedHeight;
     private long                publishedSequence;
     private long                publishedReceiptNanos;
+    private long                publishedSessionHigh;
+    private long                publishedSessionLow;
 
     private volatile long       publishedFrames;
     private volatile long       adoptedFrames;
@@ -58,6 +62,8 @@ final class LatestExternalRasterFrameStore
         long          rejectedPublicationVersion;
         long          sequence;
         long          receiptNanos;
+        long          sessionHigh;
+        long          sessionLow;
         int           payloadLength;
         int           sourceStride;
         int           destinationX;
@@ -77,6 +83,12 @@ final class LatestExternalRasterFrameStore
 
     void beginSession (final long generation)
     {
+        this.beginSession (generation, 0, 0);
+    }
+
+
+    void beginSession (final long generation, final long sessionHigh, final long sessionLow)
+    {
         if (this.closed)
             return;
 
@@ -86,6 +98,8 @@ final class LatestExternalRasterFrameStore
             if (this.closed)
                 return;
             this.activeGeneration = generation;
+            this.activeSessionHigh = sessionHigh;
+            this.activeSessionLow = sessionLow;
             this.invalidateLocked ();
         }
         finally
@@ -121,6 +135,8 @@ final class LatestExternalRasterFrameStore
             this.publishedHeight = height;
             this.publishedSequence = sequence;
             this.publishedReceiptNanos = receiptNanos;
+            this.publishedSessionHigh = this.activeSessionHigh;
+            this.publishedSessionLow = this.activeSessionLow;
             this.publicationVersion++;
             this.publishedValid = true;
             this.publishedFrames++;
@@ -205,6 +221,8 @@ final class LatestExternalRasterFrameStore
                 frame.height = this.publishedHeight;
                 frame.sequence = this.publishedSequence;
                 frame.receiptNanos = this.publishedReceiptNanos;
+                frame.sessionHigh = this.publishedSessionHigh;
+                frame.sessionLow = this.publishedSessionLow;
                 frame.publicationVersion = this.publicationVersion;
                 frame.current = true;
                 frame.staleReported = false;
@@ -224,9 +242,15 @@ final class LatestExternalRasterFrameStore
 
     void rejectCurrent (final DisplayFrame frame)
     {
+        this.discardCurrent (frame);
+        this.writerRejections++;
+    }
+
+
+    void discardCurrent (final DisplayFrame frame)
+    {
         frame.current = false;
         frame.rejectedPublicationVersion = frame.publicationVersion;
-        this.writerRejections++;
     }
 
 
