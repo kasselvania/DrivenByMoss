@@ -324,10 +324,25 @@ public final class ExternalRasterIngressLifecycleTest
                 sendFrame (socket, high, low, 2, 238, 25, 484, 114, 484 * 4, center);
                 waitFor (() -> external.getReceiver ().getAcceptedFrames () == 2, "Second Sampler frame not received.");
                 display.prepareSamplerPresentation (screen);
-                display.setNotificationMessage ("Current semantic notification");
+                display.notifyPlayedChord ("C#3");
                 display.send ();
-                require (bitmap.writes == 1, "Sampler image covered a current semantic notification.");
+                require (bitmap.writes == 2, "Typed played-note feedback evicted the current Sampler image.");
+                sendFrame (socket, high, low, 3, 238, 25, 484, 114, 484 * 4, center);
+                waitFor (() -> external.getReceiver ().getAcceptedFrames () == 3, "Third Sampler frame not received.");
+                display.prepareSamplerPresentation (screen);
+                // Same text through the ordinary path MUST still block: no note-name string matching.
+                display.notify ("C#3");
+                display.notifyPlayedChord ("D#3");
+                display.send ();
+                require (bitmap.writes == 2, "Played feedback erased or bypassed an ordinary blocking notification.");
                 display.setNotificationMessage (null);
+                sendFrame (socket, high, low, 4, 238, 25, 484, 114, 484 * 4, center);
+                waitFor (() -> external.getReceiver ().getAcceptedFrames () == 4, "Fourth Sampler frame not received.");
+                display.prepareSamplerPresentation (screen);
+                display.addGraphOverlay (0, 0, 100, 50, de.mossgrabers.framework.controller.color.ColorEx.ORANGE, new int [] { 0, 1 }, 1);
+                display.notifyPlayedChord ("E3");
+                display.send ();
+                require (bitmap.writes == 2, "Typed played feedback bypassed a real semantic overlay.");
             }
             finally { Arrays.fill (discovery.capability (), (byte) 0); }
 
@@ -352,6 +367,13 @@ public final class ExternalRasterIngressLifecycleTest
             require (newerSession.equals (MAPPER.readTree (Files.readString (notice)).get ("context_session").asText ()), "Closing an old context churned the newer context identity.");
             display.revokeSamplerContext ();
             require (!display.isSamplerPresentationRequested (), "Local context loss waited for filesystem publication.");
+            display.notifyPlayedChord ("F3");
+            display.send ();
+            final var modelField = de.mossgrabers.framework.controller.display.AbstractGraphicDisplay.class.getDeclaredField ("info");
+            modelField.setAccessible (true);
+            final var renderedModel = (de.mossgrabers.framework.graphics.display.ModelInfo) modelField.get (display);
+            require ("F3".equals (renderedModel.getNotification ()), "Note feedback outside Sampler lost its ordinary notification behavior.");
+            display.setNotificationMessage (null);
             waitFor (() -> MAPPER.readTree (Files.readString (notice)).get ("context_session").isNull (), "Inactive context notice did not follow local revocation.");
             display.acquireSamplerContext ();
             waitFor (() -> !MAPPER.readTree (Files.readString (notice)).get ("context_session").isNull (), "New context did not publish.");

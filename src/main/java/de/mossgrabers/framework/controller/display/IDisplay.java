@@ -20,6 +20,18 @@ public interface IDisplay
 
 
     /**
+     * Played-note/chord feedback, distinct from errors and workflow notifications.
+     * Existing displays retain their ordinary notification behavior by default.
+     *
+     * @param message The note/chord description
+     */
+    default void notifyPlayedChord (final String message)
+    {
+        this.notify (message);
+    }
+
+
+    /**
      * Cancels the display of a notification message.
      */
     void cancelNotification ();

@@ -177,6 +177,20 @@ public class Push2Display extends AbstractGraphicDisplay
     }
 
 
+    /** Only musical note feedback is suppressible; all ordinary notifications remain blocking. */
+    @Override
+    public void notifyPlayedChord (final String message)
+    {
+        synchronized (this.frameLock)
+        {
+            if (this.samplerLensManaged && this.samplerSession != null && this.samplerPublisher != null &&
+                this.samplerPublisher.isAvailable () && !this.shutdownRequested && !this.isShutdown)
+                return;
+            this.notify (message);
+        }
+    }
+
+
     /** {@inheritDoc} */
     @Override
     public void notify (final String message)
@@ -248,6 +262,8 @@ public class Push2Display extends AbstractGraphicDisplay
                 final IBitmap outputFrame;
                 if (this.samplerLensManaged && this.framePipeline instanceof final ExternalRasterPushFramePipeline external)
                 {
+                    // Played-note feedback is suppressed at its typed entry point. Every retained
+                    // notification and modal overlay remains blocking; none is classified by text.
                     final boolean permitted = this.samplerSession != null && this.samplerPublisher != null && this.samplerPublisher.isAvailable () && !this.hasSemanticOverlay ();
                     outputFrame = external.processSampler (image, permitted ? this.samplerSession.getMostSignificantBits () : 0,
                         permitted ? this.samplerSession.getLeastSignificantBits () : 0, permitted ? this.samplerPresentation : null);
